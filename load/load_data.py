@@ -4,6 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import (
     create_engine,
+    text,
     Table,
     Column,
     Integer,
@@ -101,7 +102,6 @@ def create_table_if_not_exists(engine, table_name, schema=None):
 
     try:
         consumer_complaints.create(engine, checkfirst=True)
-        print(f"Table {schema}.{table_name} created or already exists.")
     except SQLAlchemyError as e:
         print(f"Error creating table {schema}.{table_name}: {e}")
 
@@ -119,9 +119,64 @@ def drop_table_if_exists(engine, table_name, schema=None):
 
     try:
         table.drop(engine, checkfirst=True)
-        print(f"Table {schema}.{table_name} dropped.")
     except SQLAlchemyError as e:
         print(f"Error dropping table {schema}.{table_name}: {e}")
+
+
+def upsert_data_from_temp_table(engine, main_table_name, temp_table_name, schema=None):
+    """
+    Upserts data from the temporary table to the main table using the ON CONFLICT DO UPDATE statement.
+
+    :param engine: The SQLAlchemy engine connected to the database.
+    :param main_table_name: The name of the main table to upsert data into.
+    :param temp_table_name: The name of the temporary table containing the data.
+    :param schema: The schema to use for the tables.
+    """
+    upsert_sql = text(
+        f"""
+    INSERT INTO {schema}.{main_table_name} (
+        date_received, product, sub_product, issue, sub_issue, 
+        consumer_complaint_narrative, company_public_response, company, state, 
+        zip_code, tags, consumer_consent_provided, submitted_via, 
+        date_sent_to_company, company_response_to_consumer, timely_response, 
+        consumer_disputed, complaint_id
+    )
+    SELECT 
+        date_received, product, sub_product, issue, sub_issue, 
+        consumer_complaint_narrative, company_public_response, company, state, 
+        zip_code, tags, consumer_consent_provided, submitted_via, 
+        date_sent_to_company, company_response_to_consumer, timely_response, 
+        consumer_disputed, complaint_id
+    FROM (
+        SELECT DISTINCT ON (complaint_id) * FROM {schema}.{temp_table_name}
+    ) AS temp
+    ON CONFLICT (complaint_id) DO UPDATE SET
+        date_received = EXCLUDED.date_received,
+        product = EXCLUDED.product,
+        sub_product = EXCLUDED.sub_product,
+        issue = EXCLUDED.issue,
+        sub_issue = EXCLUDED.sub_issue,
+        consumer_complaint_narrative = EXCLUDED.consumer_complaint_narrative,
+        company_public_response = EXCLUDED.company_public_response,
+        company = EXCLUDED.company,
+        state = EXCLUDED.state,
+        zip_code = EXCLUDED.zip_code,
+        tags = EXCLUDED.tags,
+        consumer_consent_provided = EXCLUDED.consumer_consent_provided,
+        submitted_via = EXCLUDED.submitted_via,
+        date_sent_to_company = EXCLUDED.date_sent_to_company,
+        company_response_to_consumer = EXCLUDED.company_response_to_consumer,
+        timely_response = EXCLUDED.timely_response,
+        consumer_disputed = EXCLUDED.consumer_disputed;
+    """
+    )
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(upsert_sql)
+            conn.commit()
+    except SQLAlchemyError as e:
+        print(f"Error during upsert: {e}")
 
 
 if __name__ == "__main__":
@@ -131,19 +186,31 @@ if __name__ == "__main__":
     # Configuration
     DATA_PATH = "./data/complaints.csv"
     DATABASE_URI = os.getenv("DATABASE_URI")
-    TABLE_NAME = "consumer_complaints"
+    MAIN_TABLE_NAME = "consumer_complaints"
+    TEMP_TABLE_NAME = "temp_consumer_complaints"
     SCHEMA_NAME = "public"
     BATCH_SIZE = 1000
 
     # Create a database engine
     engine = create_engine(DATABASE_URI)
 
-    # Drop the table if it exists
-    drop_table_if_exists(engine, TABLE_NAME, schema=SCHEMA_NAME)
+    # Drop the temporary table if it exists
+    drop_table_if_exists(engine, TEMP_TABLE_NAME, schema=SCHEMA_NAME)
 
-    # Create the table if it doesn't exist
-    create_table_if_not_exists(engine, TABLE_NAME, schema=SCHEMA_NAME)
+    # Create the main table if it doesn't exist
+    create_table_if_not_exists(engine, MAIN_TABLE_NAME, schema=SCHEMA_NAME)
 
-    # Insert data in batches
+    # Create the temporary table if it doesn't exist
+    create_table_if_not_exists(engine, TEMP_TABLE_NAME, schema=SCHEMA_NAME)
+
+    # Insert data in batches into the temporary table
     for batch in read_data_in_batches(DATA_PATH, BATCH_SIZE):
-        insert_data_to_sql(batch, TABLE_NAME, engine, schema=SCHEMA_NAME)
+        insert_data_to_sql(batch, TEMP_TABLE_NAME, engine, schema=SCHEMA_NAME)
+
+    # Upsert data from the temporary table to the main table
+    upsert_data_from_temp_table(
+        engine, MAIN_TABLE_NAME, TEMP_TABLE_NAME, schema=SCHEMA_NAME
+    )
+
+    # Drop the temporary table after upsert
+    drop_table_if_exists(engine, TEMP_TABLE_NAME, schema=SCHEMA_NAME)
