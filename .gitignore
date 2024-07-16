@@ -1,4 +1,5 @@
 .env
 data/*.zip
 data/complaints.csv
+__pycache__/
 venv
