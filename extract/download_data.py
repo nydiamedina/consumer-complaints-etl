@@ -33,4 +33,4 @@ def download_dataset(kaggle_dataset, download_path, data_file_name):
         if not os.path.exists(data_path):
             raise FileNotFoundError("Dataset download failed.")
         else:
-            return "Dataset downloaded and extracted successfully."
+            return data_path
