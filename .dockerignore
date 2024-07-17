@@ -1,0 +1,20 @@
+# Ignore the dataset
+data/complaints.csv
+
+# Ignore virtual environment directories
+venv
+.env
+
+# Ignore Python cache files
+__pycache__
+*.pyc
+
+# Ignore test cache
+.pytest_cache
+
+# Ignore IDE configurations
+.idea
+.vscode
+
+# Ignore Git directory
+.git

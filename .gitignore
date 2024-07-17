@@ -1,5 +1,7 @@
+__pycache__/
+.DS_Store
 .env
 data/*.zip
 data/complaints.csv
-__pycache__/
+kaggle.json
 venv

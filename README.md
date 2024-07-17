@@ -11,7 +11,7 @@
 
 ### 1. Download the Data
 
-First, the consumer complaint dataset is downloaded from Kaggle. The download functionality is encapsulated in a function that fetches the dataset if it is not already available locally.
+First, the consumer complaint dataset is downloaded from Kaggle. The download functionality is encapsulated in a function that fetches the dataset if it is not already available locally. The endpoint could take some time depending on the size of the data.
 
 - **Endpoint**: **POST** `/complaints/download`
 
@@ -19,7 +19,7 @@ First, the consumer complaint dataset is downloaded from Kaggle. The download fu
 
 #### Approach 1: Load All Data at Once
 
-This approach loads the entire dataset in batches into a temporary table and then upserts it into the main table. The entire process is done in chunks (1 to 1000 rows) to manage memory efficiently but is executed in a single request.
+This approach loads the entire dataset in batches into a temporary table and then upserts it into the main table. The entire process is done in chunks (1 to 1000 rows) to manage memory efficiently but is executed in a single request. The endpoint could take some time depending on the size of the data.
 
 - **Endpoint**: **POST** `/complaints/load_all`
 
@@ -33,30 +33,19 @@ This approach allows loading the data incrementally (1 to 1000 rows), one batch 
 
 ### Up and Running
 
-1. **Create a Virtual Environment**:
+1. **Create a kaggle.json File**:
+
+   Place the kaggle.json file in the root of the project directory. This file is required for authentication with the Kaggle API.
+
+2. **Build and Run the Docker Containers**:
 
    ```bash
-   python -m venv venv
-   source venv/bin/activate
+   docker compose up --build
    ```
 
-2. **Install Dependencies**:
+3. **Access the Application:**:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set Up Environment Variables**:
-   Create a `.env` file with the following content:
-
-   ```env
-   DATABASE_URI=database_uri
-   ```
-
-4. **Start the FastAPI server using Uvicorn**:
-   ```bash
-   uvicorn api.main:app --reload
-   ```
+   The FastAPI application will be available at http://localhost:8000.
 
 ### Core Libraries
 
@@ -124,9 +113,9 @@ The solution can be enhanced further by implementing the following features:
 
 - **Tests Implementation**:
   Use `pytest` to implement tests that verify all functionalities, such as data download, data ingestion, and data upsert processes, ensuring the application works as expected.
-- **Application Containerization**:
-  Containerize the application using Docker to encapsulate the environment and dependencies, ensuring consistent execution in any Docker-supported system. This simplifies deployment and scaling across development, testing, and production environments.
 - **Flexible Data Extraction**:
   Implement a Factory design pattern for data extraction functions, making it easy to add new types of data sources as modular components that can be tested and maintained separately as business requirements evolve.
 - **Robust Data Validation**:
   Integrate a library like `great_expectations` to define and enforce data quality checks, creating a validation layer that catches anomalies and inconsistencies in the data early in the pipeline.
+- **Enhanced Error Handling**:
+  Add more detailed error codes and messages in the API responses to follow backend standards, providing clearer information to users about the nature of errors and how to resolve them.
