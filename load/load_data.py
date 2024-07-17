@@ -15,14 +15,53 @@ from sqlalchemy import (
 from sqlalchemy.exc import SQLAlchemyError
 
 
-def read_data_in_batches(file_path, batch_size=MAX_BATCH_SIZE, page=DEFAULT_PAGE):
+def read_data_in_batches(file_path, batch_size=MAX_BATCH_SIZE):
     """
     Reads data from a CSV file in batches and renames columns to match SQL table schema.
 
     :param file_path: The path to the CSV file.
     :param batch_size: The number of rows per batch.
-    :param page: The page number to load.
     :return: A generator that yields dataframes of the specified batch size.
+    """
+    column_mapping = {
+        "Date received": "date_received",
+        "Product": "product",
+        "Sub-product": "sub_product",
+        "Issue": "issue",
+        "Sub-issue": "sub_issue",
+        "Consumer complaint narrative": "consumer_complaint_narrative",
+        "Company public response": "company_public_response",
+        "Company": "company",
+        "State": "state",
+        "ZIP code": "zip_code",
+        "Tags": "tags",
+        "Consumer consent provided?": "consumer_consent_provided",
+        "Submitted via": "submitted_via",
+        "Date sent to company": "date_sent_to_company",
+        "Company response to consumer": "company_response_to_consumer",
+        "Timely response?": "timely_response",
+        "Consumer disputed?": "consumer_disputed",
+        "Complaint ID": "complaint_id",
+    }
+
+    for chunk in pd.read_csv(file_path, chunksize=batch_size):
+        chunk.rename(columns=column_mapping, inplace=True)
+        # Convert Yes/No fields to Boolean
+        if "timely_response" in chunk.columns:
+            chunk["timely_response"] = chunk["timely_response"].map(
+                {"Yes": True, "No": False}
+            )
+        yield chunk
+
+
+def read_single_batch(file_path, batch_size=MAX_BATCH_SIZE, page=DEFAULT_PAGE):
+    """
+    Reads a single batch of data from the CSV file based on the batch size and page number.
+
+    :param file_path: The path to the CSV file.
+    :param batch_size: The number of rows per batch.
+    :param page: The page number to read.
+    :return: A DataFrame containing the batch of data.
     """
     column_mapping = {
         "Date received": "date_received",
@@ -57,8 +96,6 @@ def read_data_in_batches(file_path, batch_size=MAX_BATCH_SIZE, page=DEFAULT_PAGE
                 {"Yes": True, "No": False}
             )
         return chunk
-
-    return pd.DataFrame()  # Return an empty DataFrame if no more data
 
 
 def insert_data_to_sql(dataframe, table_name, engine, schema=None):
@@ -244,9 +281,9 @@ def load_batch_data_to_database(
     create_table_if_not_exists(engine, temp_table_name, schema=schema_name)
 
     # Insert data into the temporary table
-    batch = read_data_in_batches(data_path, batch_size=batch_size, page=page)
+    batch = read_single_batch(data_path, batch_size=batch_size, page=page)
     if batch.empty:
-        return None  # No more data to load
+        return None  # Return None if no more data
 
     insert_data_to_sql(batch, temp_table_name, engine, schema=schema_name)
 
