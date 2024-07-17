@@ -10,9 +10,10 @@ from config import (
     SCHEMA_NAME,
     MIN_BATCH_SIZE,
     MAX_BATCH_SIZE,
+    DEFAULT_PAGE,
 )
 from extract.download_data import download_dataset
-from load.load_data import load_all_data_to_database
+from load.load_data import load_all_data_to_database, load_batch_data_to_database
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ def load_all_complaints(
             main_table_name=MAIN_TABLE_NAME,
             temp_table_name=TEMP_TABLE_NAME,
             schema_name=SCHEMA_NAME,
-            batch_size=batch_size,
+            batch_size=int(batch_size),
         )
         return {"message": "Data loaded successfully."}
     except Exception as e:
@@ -50,6 +51,21 @@ def load_all_complaints(
 
 @router.post("/complaints/load_batch")
 def load_batch_complaints(
-    batch_size: int = Query(MAX_BATCH_SIZE, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE)
+    batch_size: int = Query(MAX_BATCH_SIZE, ge=MIN_BATCH_SIZE, le=MAX_BATCH_SIZE),
+    page: int = Query(DEFAULT_PAGE, ge=DEFAULT_PAGE),
 ):
-    pass
+    try:
+        next_page = load_batch_data_to_database(
+            data_path=DATA_PATH,
+            database_uri=DATABASE_URI,
+            main_table_name=MAIN_TABLE_NAME,
+            temp_table_name=TEMP_TABLE_NAME,
+            schema_name=SCHEMA_NAME,
+            batch_size=int(batch_size),
+            page=int(page),
+        )
+        if next_page is None:
+            return {"message": "All data loaded successfully.", "next_page": None}
+        return {"message": "Batch loaded successfully.", "next_page": next_page}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

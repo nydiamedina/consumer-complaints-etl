@@ -1,6 +1,6 @@
 import pandas as pd
 
-from dotenv import load_dotenv
+from config import MAX_BATCH_SIZE, DEFAULT_PAGE
 from sqlalchemy import (
     create_engine,
     text,
@@ -15,12 +15,13 @@ from sqlalchemy import (
 from sqlalchemy.exc import SQLAlchemyError
 
 
-def read_data_in_batches(file_path, batch_size=1000):
+def read_data_in_batches(file_path, batch_size=MAX_BATCH_SIZE, page=DEFAULT_PAGE):
     """
     Reads data from a CSV file in batches and renames columns to match SQL table schema.
 
     :param file_path: The path to the CSV file.
     :param batch_size: The number of rows per batch.
+    :param page: The page number to load.
     :return: A generator that yields dataframes of the specified batch size.
     """
     column_mapping = {
@@ -44,14 +45,20 @@ def read_data_in_batches(file_path, batch_size=1000):
         "Complaint ID": "complaint_id",
     }
 
-    for chunk in pd.read_csv(file_path, chunksize=batch_size):
+    offset = (page - 1) * batch_size
+
+    for chunk in pd.read_csv(
+        file_path, chunksize=batch_size, skiprows=range(1, offset + 1)
+    ):
         chunk.rename(columns=column_mapping, inplace=True)
         # Convert Yes/No fields to Boolean
         if "timely_response" in chunk.columns:
             chunk["timely_response"] = chunk["timely_response"].map(
                 {"Yes": True, "No": False}
             )
-        yield chunk
+        return chunk
+
+    return pd.DataFrame()  # Return an empty DataFrame if no more data
 
 
 def insert_data_to_sql(dataframe, table_name, engine, schema=None):
@@ -204,3 +211,51 @@ def load_all_data_to_database(
 
     # Drop the temporary table after upsert
     drop_table_if_exists(engine, temp_table_name, schema=schema_name)
+
+
+def load_batch_data_to_database(
+    data_path,
+    database_uri,
+    main_table_name,
+    temp_table_name,
+    schema_name,
+    batch_size,
+    page,
+):
+    """
+    Loads a single batch of data into the temporary table and upserts it into the main table.
+
+    :param data_path: The path to the CSV file.
+    :param database_uri: The database URI.
+    :param main_table_name: The name of the main table.
+    :param temp_table_name: The name of the temporary table.
+    :param schema_name: The schema name.
+    :param batch_size: The size of the batch to load.
+    :param page: The page number to load.
+    :return: The next page number to load, or None if there is no more data.
+    """
+    # Create a database engine
+    engine = create_engine(database_uri)
+
+    # Create the main table if it doesn't exist
+    create_table_if_not_exists(engine, main_table_name, schema=schema_name)
+
+    # Create the temporary table if it doesn't exist
+    create_table_if_not_exists(engine, temp_table_name, schema=schema_name)
+
+    # Insert data into the temporary table
+    batch = read_data_in_batches(data_path, batch_size=batch_size, page=page)
+    if batch.empty:
+        return None  # No more data to load
+
+    insert_data_to_sql(batch, temp_table_name, engine, schema=schema_name)
+
+    # Upsert data from the temporary table to the main table
+    upsert_data_from_temp_table(
+        engine, main_table_name, temp_table_name, schema=schema_name
+    )
+
+    # Drop the temporary table after upsert
+    drop_table_if_exists(engine, temp_table_name, schema=schema_name)
+
+    return page + 1  # Return the next page number
